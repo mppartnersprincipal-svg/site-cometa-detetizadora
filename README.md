@@ -46,6 +46,8 @@ Cada página manda uma mensagem própria no WhatsApp ("Olá! Vim pelo site e pre
 - **GTM:** `GTM-MNJ3NB86` (o mesmo do WordPress antigo). **GA4:** `G-Z5FPTWB38Y`. **Google Ads:** conta 220-642-8887, tag `AW-963034156`.
 - Tudo passa pelo GTM: nada de `gtag`/pixel direto no HTML (contaria em dobro). O código fica em `build/build.js` (`RASTREAMENTO`, `headRastreio`, `noscriptGtm`).
 - O JSON de importação está em `gtm/GTM-MNJ3NB86-importar.json`. Ele **não** cria Google Tag, vinculador de conversões nem a conversão de WhatsApp, porque o contêiner já tem os três (ver "Conversões").
+- **GA4 e o `page_view` (versão 41 do GTM, 06/11/2026):** o ID G-Z5FPTWB38Y não é uma "tag do Google" própria: ele está agrupado na tag do Google AW-708138840 (outra conta de Ads, que não é da Cometa), e `gtag/js?id=G-Z5FPTWB38Y` responde 404. Por isso a tag "GA4 - G-Z5FPTWB38Y" do GTM não envia nada sozinha. O `page_view` vai pela tag **"GA4 - page_view (G-Z5FPTWB38Y)"** (evento GA4, Initialization - All Pages), e os outros eventos pela "GA4 - Evento - Eventos da LP". **Não** usar AW-708138840 como ID de tag. O GA4 G-8328NK3ZXG (sem acesso da MP) recebe `page_view` pela tag do Google Ads AW-963034156.
+- GA4 "GA4 - Cometa" (propriedade 491068658): retenção de 14 meses, "interações com formulário" desligado e dimensões personalizadas de evento `cta_id`, `page_type`, `section_id` e `faq_question`.
 - Cada página envia `page_type` antes do GTM: `inicio`, `desentupimento`, `limpa-fossa`, `caixa-de-gordura`, `hidrojato`, `caixa-dagua`, `dedetizacao` (+ `privacidade`, `erro404`).
 
 | Evento (dataLayer → GA4) | Quando | Parâmetros |
@@ -82,9 +84,10 @@ Painel com senha em `/dashboard`: visitas, contatos por botão e por página de 
 
 ## Pendências
 - [x] GTM instalado no site (GTM-MNJ3NB86, 06/11/2026)
-- [ ] Importar `gtm/GTM-MNJ3NB86-importar.json` no GTM (Mesclar) e publicar
-- [ ] Criar as tabelas `cometa_*` no Supabase (`supabase/migrations/0001_cometa_analytics.sql`) e cadastrar as variáveis do painel na Vercel (DASHBOARD.md)
-- [ ] GA4: marcar `click_whatsapp` como evento-chave; dar acesso de Leitor à conta de serviço `dashboard-ga4@`
+- [x] JSON do GTM importado e publicado; `page_view` do GA4 corrigido (versão 41, 06/11/2026)
+- [x] Tabelas `cometa_*` no Supabase e variáveis do painel na Vercel (06/11/2026)
+- [ ] GA4: marcar `click_whatsapp` como evento principal (Administrador → Eventos → estrela), quando ele aparecer na lista. Ele só é disparado pelo site novo, então aparece depois do primeiro clique real
+- [ ] Apagar a visita de teste: `delete from cometa_sessions where utm_content = 'qa-seed';`
 - [ ] Instalar MCP do Google Ads nesta máquina (pegar config com o Pedro)
 - [ ] Domínio: pedir código de acesso da Hostinger ao cliente e perguntar se usam e-mail @cometadedetizadora.com.br
 - [ ] Na troca do domínio: manter MX do e-mail, redirecionar (301) URLs antigas do WordPress, **remover o `X-Robots-Tag: noindex` do vercel.json**
