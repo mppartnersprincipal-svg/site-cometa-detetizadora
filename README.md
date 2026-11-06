@@ -39,6 +39,7 @@ Eventos no dataLayer: `clique_whatsapp` e `clique_telefone`.
 2. Gerar a versão final: `cd site/build && node build.js` (gera `site/producao`).
 3. Publicar: dentro de `site/producao`, rodar
    `npx --yes vercel@48.2.0 deploy --prod --yes --name cometa-goiania --scope mppartnersprincipal-6278s-projects`
+4. Salvar no GitHub (repositório privado mppartnersprincipal-svg/site-cometa-detetizadora, pasta `site`): `git add -A`, `git commit -m "..."` e `git push`.
 
 ## Campanhas
 - Google Ads: [MP][LEAD][PESQUISA][DESENTUPIMENTO] e [MP][LEAD][PESQUISA][CAIXA D'ÁGUA] (só caixa d'água desde 26/10/2026).
