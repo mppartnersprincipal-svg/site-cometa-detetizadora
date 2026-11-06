@@ -1,0 +1,15 @@
+# Só producao/ (estático gerado pelo build) e api/ (Functions) vão para a Vercel. Material interno fica fora do deploy.
+/prototipo/
+/build/
+/painel/
+/supabase/
+/gtm/
+/tests/
+/scripts/
+/README.md
+/DASHBOARD.md
+/briefing.md
+/estrutura-site.md
+/.env.example
+/.gitignore
+node_modules/

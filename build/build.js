@@ -37,6 +37,80 @@ MSG["gordura-empresa"] = scriptProto.match(/MSG\["gordura-empresa"\] = "([^"]+)"
 const AUTO = Function("return " + scriptProto.match(/var AUTO = (\{[^}]+\});/)[1])();
 const NUMERO = scriptProto.match(/var NUMERO = "(\d+)"/)[1];
 
+// ---------- rastreamento ----------
+// Tudo pelo GTM (GA4 G-Z5FPTWB38Y + conversões do Google Ads ficam no contêiner; JSON de importação em gtm/).
+// Nada de gtag/pixel direto no HTML: contaria em dobro. Os cliques também vão para o coletor do
+// /dashboard (painel/js/tracker.js → window.coCollect). Eventos e cta_id: README.md → Rastreamento.
+const GTM_ID = "GTM-MNJ3NB86";
+// page_type de cada página (mesmos nomes de api/_lib/payload.js → PAGE_TYPES)
+const headRastreio = pt => `<script>window.dataLayer=window.dataLayer||[];dataLayer.push({page_type:"${pt}"});</script>
+<script src="/js/tracker.js" defer></script>`;
+const noscriptGtm = `<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=${GTM_ID}" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>`;
+const RASTREAMENTO = `
+  // ---- rastreamento: dataLayer (GTM) + coletor do /dashboard ----
+  // Eventos: click_whatsapp · click_phone · click_maps · click_cta (com cta_id) · faq_open
+  // · scroll_25/50/75/100 · section_view (section_id = data-secao). page_type e UTMs seguem em todos.
+  var dl = window.dataLayer = window.dataLayer || [];
+  var PT = (dl.filter(function(x){ return x && x.page_type; })[0] || {}).page_type || "inicio";
+  var UTM_KEYS = ["utm_source","utm_medium","utm_campaign","utm_term","utm_content"];
+  // zera parâmetros a cada evento: o dataLayer do GTM guarda o último valor
+  var RESET = { cta_id: undefined, section_id: undefined, percent_scrolled: undefined, faq_question: undefined };
+  var COLLECT = { click_whatsapp: "whatsapp_click", click_phone: "phone_click", click_cta: "cta_click", click_maps: "cta_click", faq_open: "faq_open" };
+  var utms = {};
+  try {
+    var qs = new URLSearchParams(location.search), daUrl = {};
+    UTM_KEYS.forEach(function(k){ var x = qs.get(k); if (x) daUrl[k] = x.slice(0, 100); });
+    if (Object.keys(daUrl).length) sessionStorage.setItem("co_utms", JSON.stringify(daUrl));
+    utms = JSON.parse(sessionStorage.getItem("co_utms") || "{}");
+  } catch (e) { utms = {}; }
+  function track(nome, params){
+    dl.push(Object.assign({ event: nome, page_type: PT }, RESET, utms, params || {}));
+    if (!COLLECT[nome] || !window.coCollect) return;
+    window.coCollect(COLLECT[nome], nome === "faq_open" ? params : { cta_location: params.cta_id });
+  }
+  // onde o clique aconteceu: botões fixos, topo, rodapé ou data-secao da seção
+  function lugar(el){
+    if (el.closest(".zap-flutuante")) return "flutuante";
+    if (el.closest(".barra-cel")) return "barra";
+    if (el.closest(".topo")) return "header";
+    if (el.closest(".rodape")) return "rodape";
+    var s = el.closest("[data-secao]"); return s ? s.dataset.secao : "conteudo";
+  }
+
+  // GTM carrega depois da página, para não pesar na abertura
+  dl.push({ "gtm.start": Date.now(), event: "gtm.js" });
+  window.addEventListener("load", function(){ setTimeout(function(){
+    var g = document.createElement("script"); g.async = true; g.src = "https://www.googletagmanager.com/gtm.js?id=${GTM_ID}"; document.head.appendChild(g);
+  }, 0); });
+
+  document.addEventListener("click", function(ev){
+    var a = ev.target.closest("a"); if (!a) return;
+    if (a.classList.contains("zap-link")) return track("click_whatsapp", { cta_id: a.dataset.cta || "cta_whatsapp_" + lugar(a) });
+    if (a.classList.contains("tel-link")) return track("click_phone", { cta_id: "tel_" + lugar(a) });
+    if (/google\\.[a-z.]+\\/maps/.test(a.href)) return track("click_maps", { cta_id: "maps_" + lugar(a) });
+    if (a.dataset.ctaId) track("click_cta", { cta_id: a.dataset.ctaId });
+  });
+
+  // FAQ: pergunta aberta (o clique acontece antes de o <details> abrir)
+  document.querySelectorAll(".faq summary").forEach(function(s){ s.addEventListener("click", function(){
+    if (!s.parentElement.open) track("faq_open", { faq_question: s.textContent.replace(/\\s+/g, " ").trim().slice(0, 120) });
+  }); });
+
+  // rolagem: cada marca dispara uma vez por página
+  var marcas = {}, rolando = false;
+  function confere(){
+    var h = document.documentElement.scrollHeight - innerHeight, pct = h > 0 ? scrollY / h * 100 : 100;
+    [25, 50, 75, 100].forEach(function(m){ if (!marcas[m] && pct >= m - 1) { marcas[m] = true; track("scroll_" + m, { percent_scrolled: m }); } });
+    rolando = false;
+  }
+  window.addEventListener("scroll", function(){ if (!rolando) { rolando = true; requestAnimationFrame(confere); } }, { passive: true });
+
+  // seção vista: quando cruza o meio da tela, uma vez por seção
+  if (temIO) { var sio = new IntersectionObserver(function(es){ es.forEach(function(e){
+    if (!e.isIntersecting) return; sio.unobserve(e.target); track("section_view", { section_id: e.target.dataset.secao });
+  }); }, { rootMargin: "0px 0px -50% 0px" }); document.querySelectorAll("[data-secao]").forEach(function(el){ sio.observe(el); }); }`;
+
 const views = {};
 proto.replace(/<section data-view="([\w-]+)"[^>]*>([\s\S]*?)\n<\/section>/g, (m, v, corpo) => { views[v] = corpo; });
 if (Object.keys(views).length !== 7) throw new Error("esperava 7 páginas, achei " + Object.keys(views).length);
@@ -140,13 +214,7 @@ function script(v) {
   window.addEventListener("scroll", function(){ if (!pend) { pend = true; requestAnimationFrame(rola); } }, {passive:true}); rola();
   setTimeout(function(){ balao.classList.add("mostra"); setTimeout(function(){ balao.classList.remove("mostra"); }, 6000); }, 4000);
 
-  // eventos de clique para o Google Tag Manager / Google Ads
-  window.dataLayer = window.dataLayer || [];
-  document.addEventListener("click", function(ev){
-    var a = ev.target.closest(".zap-link,.tel-link"); if (!a) return;
-    window.dataLayer.push({ event: a.classList.contains("tel-link") ? "clique_telefone" : "clique_whatsapp", servico: PAGINA,
-      local_clique: a.dataset.local || (a.closest(".hero") ? "hero" : a.closest(".topo") ? "topo" : a.closest(".cta-final") ? "cta_final" : "conteudo") });
-  });
+${RASTREAMENTO}
 })();
 </script>`;
 }
@@ -182,12 +250,13 @@ function pagina(v) {
 <link rel="preload" href="/fonts/archivo-italic.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/source-sans-3.woff2" as="font" type="font/woff2" crossorigin>
 ${preload}
-<!-- Google Tag Manager: colar o código do contêiner aqui -->
+${headRastreio(v)}
 <script type="application/ld+json">${JSON.stringify(empresa)}</script>
 <script type="application/ld+json">${JSON.stringify(ldPagina(v, views[v]))}</script>
 <style>${css.replace(/url\(fonts\//g, "url(/fonts/")}</style>
 </head>
 <body>
+${noscriptGtm}
 ${sprite}
 
 ${absolutos(topo)}
@@ -223,6 +292,7 @@ for (const rel of usados) {
 
 // página 404
 fs.writeFileSync(path.join(OUT, "404.html"), pagina("inicio")
+  .replace('page_type:"inicio"', 'page_type:"erro404"')
   .replace(/<title>[^<]*<\/title>/, "<title>Página não encontrada | Cometa</title>")
   .replace(/<meta name="robots"[^>]*>/, '<meta name="robots" content="noindex">')
   .replace(/<main>[\s\S]*<\/main>/, `<main><section class="faixa"><div class="wrap"><span class="eyebrow">Erro 404</span><h1 style="margin-top:12px">Essa página não existe</h1><p class="lead" style="margin-top:14px">Mas o seu entupimento a gente resolve. Veja os serviços ou chame no WhatsApp.</p><div class="acoes" style="margin-top:24px;display:flex;gap:12px;flex-wrap:wrap"><a class="btn btn-zap zap-link" data-msg="geral" href="#" target="_blank" rel="noopener"><svg><use href="#i-zap"/></svg>Chamar no WhatsApp</a><a class="btn btn-sec" href="/">Ver serviços</a></div></div></section></main>`));
@@ -242,6 +312,7 @@ const privacidade = `<main><section class="faixa"><div class="wrap" style="max-w
 <p style="margin-top:32px;font-size:.9rem;color:var(--cinza,#555)">Atualizada em novembro de 2026.</p>
 </div></section></main>`;
 fs.writeFileSync(path.join(OUT, "politica-de-privacidade.html"), pagina("inicio")
+  .replace('page_type:"inicio"', 'page_type:"privacidade"')
   .replace(/<title>[^<]*<\/title>/, "<title>Política de privacidade | Cometa Desentupidora e Dedetizadora</title>")
   .replace(/<meta name="description"[^>]*>/, '<meta name="description" content="Como a Cometa Desentupidora e Dedetizadora trata os dados de quem visita o site e entra em contato.">')
   .replace(/<meta name="robots"[^>]*>/, '<meta name="robots" content="noindex, follow">')
@@ -255,25 +326,11 @@ fs.writeFileSync(path.join(OUT, "sitemap.xml"), `<?xml version="1.0" encoding="U
 ${Object.keys(PAGINAS).map(v => `  <url><loc>${url(v)}</loc><lastmod>${hoje}</lastmod></url>`).join("\n")}
 </urlset>
 `);
-fs.writeFileSync(path.join(OUT, "robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${DOMINIO}/sitemap.xml\n`);
+fs.writeFileSync(path.join(OUT, "robots.txt"), `User-agent: *\nAllow: /\nDisallow: /dashboard\nDisallow: /api/\n\nSitemap: ${DOMINIO}/sitemap.xml\n`);
 
-// Vercel: URLs sem .html, cache longo para arquivos estáticos,
-// redirecionamento das URLs do WordPress antigo e noindex só no endereço provisório (*.vercel.app).
-fs.writeFileSync(path.join(OUT, "vercel.json"), JSON.stringify({
-  cleanUrls: true,
-  trailingSlash: false,
-  redirects: [
-    { source: "/hello-world", destination: "/", permanent: true },
-    { source: "/hello-world/", destination: "/", permanent: true },
-    { source: "/feed", destination: "/", permanent: true },
-    { source: "/comments/feed", destination: "/", permanent: true },
-    { source: "/wp-admin", destination: "/", permanent: false },
-    { source: "/wp-login.php", destination: "/", permanent: false }
-  ],
-  headers: [
-    { source: "/(img|video|fonts)/(.*)", headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }] },
-    { source: "/(.*)", has: [{ type: "host", value: "(?<sub>.*)\\.vercel\\.app" }], headers: [{ key: "X-Robots-Tag", value: "noindex" }] }
-  ]
-}, null, 2) + "\n");
+// painel do cliente (/dashboard) e coletor (/js/tracker.js): fonte em ../painel, copiados como estão
+const PAINEL = path.join(__dirname, "../painel");
+fs.cpSync(PAINEL, OUT, { recursive: true });
+// vercel.json fica na raiz do repositório (junto de api/), não aqui.
 
 console.log("páginas:", Object.keys(PAGINAS).length, "| arquivos copiados:", usados.size, "| saída:", OUT);

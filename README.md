@@ -32,26 +32,64 @@ Até 40 km sem custo de deslocamento. Acima disso (ex.: Anápolis) só indústri
 | Dedetização | /dedetizacao-goiania |
 
 Cada página manda uma mensagem própria no WhatsApp ("Olá! Vim pelo site e preciso de limpa fossa.", com variações "para empresa"), para separar os leads por serviço no CRM.
-Eventos no dataLayer: `clique_whatsapp` e `clique_telefone`.
 
 ### Como editar e publicar
-1. Editar `site/prototipo/index.html` (é a fonte de tudo).
-2. Gerar a versão final: `cd site/build && node build.js` (gera `site/producao`).
-3. Publicar: dentro de `site/producao`, rodar
-   `npx --yes vercel@48.2.0 deploy --prod --yes --name cometa-goiania --scope mppartnersprincipal-6278s-projects`
-4. Salvar no GitHub (repositório privado mppartnersprincipal-svg/site-cometa-detetizadora, pasta `site`): `git add -A`, `git commit -m "..."` e `git push`.
+1. Editar `prototipo/index.html` (é a fonte de tudo). O painel fica em `painel/` (`dashboard/` e `js/tracker.js`).
+2. Gerar a versão final: `cd build && node build.js` (gera `producao/`, já com o painel copiado).
+3. Testes do painel: `npm test` na raiz.
+4. Publicar **da raiz do repositório** (não mais de dentro de `producao`, porque as funções do painel ficam em `api/`):
+   `npx --yes vercel@48.2.0 deploy --prod --yes --scope mppartnersprincipal-6278s-projects`
+   (a raiz já está ligada ao projeto `cometa-goiania`; numa máquina nova, rodar antes `npx --yes vercel@48.2.0 link --yes --project cometa-goiania --scope mppartnersprincipal-6278s-projects`)
+5. Salvar no GitHub (repositório privado mppartnersprincipal-svg/site-cometa-detetizadora): `git add -A`, `git commit -m "..."` e `git push`.
+
+## Rastreamento
+- **GTM:** `GTM-MNJ3NB86` (o mesmo do WordPress antigo). **GA4:** `G-Z5FPTWB38Y`. **Google Ads:** conta 220-642-8887, tag `AW-963034156`.
+- Tudo passa pelo GTM: nada de `gtag`/pixel direto no HTML (contaria em dobro). O código fica em `build/build.js` (`RASTREAMENTO`, `headRastreio`, `noscriptGtm`).
+- O JSON de importação está em `gtm/GTM-MNJ3NB86-importar.json`. Ele **não** cria Google Tag, vinculador de conversões nem a conversão de WhatsApp, porque o contêiner já tem os três (ver "Conversões").
+- Cada página envia `page_type` antes do GTM: `inicio`, `desentupimento`, `limpa-fossa`, `caixa-de-gordura`, `hidrojato`, `caixa-dagua`, `dedetizacao` (+ `privacidade`, `erro404`).
+
+| Evento (dataLayer → GA4) | Quando | Parâmetros |
+|---|---|---|
+| `click_whatsapp` | clique em qualquer `.zap-link` | `cta_id` |
+| `click_phone` | clique em `.tel-link` | `cta_id` |
+| `click_maps` | "Ver no mapa" do rodapé | `cta_id` |
+| `click_cta` | links com `data-cta-id` ("Ver serviços" da home) | `cta_id` |
+| `faq_open` | pergunta aberta | `faq_question` |
+| `scroll_25/50/75/100` | profundidade de rolagem, 1x por página | `percent_scrolled` |
+| `section_view` | seção cruzou o meio da tela, 1x por seção | `section_id` |
+
+Todos levam `page_type` e os UTMs da entrada (`utm_source/medium/campaign/term/content`).
+
+**`cta_id`** é montado pelo lugar do clique: `cta_whatsapp_<lugar>`, `tel_<lugar>`, `maps_<lugar>`. Lugares fixos: `header`, `flutuante`, `barra` (barra do celular), `rodape`; dentro das páginas vale o `data-secao` da seção. Para dar um nome fixo a um botão, use `data-cta="..."` nele.
+
+**`data-secao`** (em cada `<section>` do protótipo e no `.hero`): `topo` (primeira dobra), `servicos`, `numeros`, `empresas`, `equipe`, `avaliacoes`, `duvidas`, `quando`, `como`, `oque`, `antes-depois`, `outros` (serviços que combinam), `area`, `final`. Seção nova precisa de `data-secao`. Se for de uma página de serviço, também precisa entrar em `api/_lib/report.js → SECTIONS`, na ordem da página.
+
+### Conversões (Google Ads)
+| Conversão | Origem | Tipo |
+|---|---|---|
+| Entrou em contato Whatsapp | tag antiga do GTM, acionada por clique em link `wa.me` (vale para o WordPress e para o site novo) | principal |
+| Clique no telefone (site) | tag nova `Google Ads - Conversão - Clique no telefone (site)`, evento `click_phone` (`AW-963034156/1aT9CIvPsLMdEKz4mssD`) | secundária (fora do lance) |
+| Calls from ads / Lead Telefônico - Anúncio | ligação pelo anúncio | principal |
+
+Não criar uma segunda tag de conversão de WhatsApp ligada a `click_whatsapp` enquanto a tag antiga de `wa.me` estiver ativa: o mesmo clique contaria duas vezes.
+
+## Painel (/dashboard)
+Painel com senha em `/dashboard`: visitas, contatos por botão e por página de serviço, funil de leitura de cada página, jornadas, campanhas/UTMs, Google Ads e GA4. Como funciona, variáveis e banco: [DASHBOARD.md](DASHBOARD.md).
 
 ## Campanhas
 - Google Ads: [MP][LEAD][PESQUISA][DESENTUPIMENTO] e [MP][LEAD][PESQUISA][CAIXA D'ÁGUA] (só caixa d'água desde 26/10/2026).
 - CRM: o cliente não marca perdidos nem faz follow-up (out/2026 com ~200 negócios em aberto).
 
 ## Pendências
-- [ ] Criar GTM (conta da MP) e instalar no site
+- [x] GTM instalado no site (GTM-MNJ3NB86, 06/11/2026)
+- [ ] Importar `gtm/GTM-MNJ3NB86-importar.json` no GTM (Mesclar) e publicar
+- [ ] Criar as tabelas `cometa_*` no Supabase (`supabase/migrations/0001_cometa_analytics.sql`) e cadastrar as variáveis do painel na Vercel (DASHBOARD.md)
+- [ ] GA4: marcar `click_whatsapp` como evento-chave; dar acesso de Leitor à conta de serviço `dashboard-ga4@`
 - [ ] Instalar MCP do Google Ads nesta máquina (pegar config com o Pedro)
 - [ ] Domínio: pedir código de acesso da Hostinger ao cliente e perguntar se usam e-mail @cometadedetizadora.com.br
 - [ ] Na troca do domínio: manter MX do e-mail, redirecionar (301) URLs antigas do WordPress, **remover o `X-Robots-Tag: noindex` do vercel.json**
 - [ ] Google Search Console + envio do sitemap
-- [ ] Criar conversões no Google Ads a partir dos cliques de WhatsApp e telefone
+- [x] Conversão "Clique no telefone (site)" criada como secundária (06/11/2026). WhatsApp segue na conversão antiga "Entrou em contato Whatsapp"
 - [ ] Trocar URLs finais dos anúncios para a página de cada serviço (depois do domínio)
 - [ ] Confirmar CPA de referência com o cliente
 - [ ] Ver com o cliente se fazem desratização, descupinização e vídeo inspeção (possíveis páginas novas)
